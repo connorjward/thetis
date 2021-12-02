@@ -8,19 +8,24 @@ from .configuration import *
 __all__ = ["VorticityCalculator2D", "HessianRecoverer2D", "DynamicPressureCalculator"]
 
 
-class VorticityCalculator2D(object):
+class VorticityCalculator2D(FrozenHasTraits):
     r"""
     Linear solver for recovering fluid vorticity.
 
     It is recommended that the vorticity is sought
     in :math:`\mathbb P1` space.
-
-    :arg uv_2d: horizontal velocity :class:`Function`.
-    :arg vorticity_2d: :class:`Function` to hold calculated vorticity.
-    :kwargs: to be passed to the :class:`LinearVariationalSolver`.
     """
+    uv_2d = FiredrakeVectorExpression(
+        Constant(as_vector([0.0, 0.0])), help='Horizontal velocity').tag(config=True)
+
     @PETSc.Log.EventDecorator("thetis.VorticityCalculator2D.__init__")
     def __init__(self, uv_2d, vorticity_2d, **kwargs):
+        """
+        :arg uv_2d: vector expression for the horizontal velocity.
+        :arg vorticity_2d: :class:`Function` to hold calculated vorticity.
+        :kwargs: to be passed to the :class:`LinearVariationalSolver`.
+        """
+        self.uv_2d = uv_2d
         fs = vorticity_2d.function_space()
         dim = fs.mesh().topological_dimension()
         if dim != 2:
@@ -32,9 +37,9 @@ class VorticityCalculator2D(object):
         # Weak formulation
         test = TestFunction(fs)
         a = TrialFunction(fs)*test*dx
-        L = -inner(perp(uv_2d), grad(test))*dx \
-            + dot(perp(uv_2d), test*n)*ds \
-            + dot(avg(perp(uv_2d)), jump(test, n))*dS
+        L = -inner(perp(self.uv_2d), grad(test))*dx \
+            + dot(perp(self.uv_2d), test*n)*ds \
+            + dot(avg(perp(self.uv_2d)), jump(test, n))*dS
 
         # Setup vorticity solver
         prob = LinearVariationalProblem(a, L, vorticity_2d)
@@ -43,7 +48,9 @@ class VorticityCalculator2D(object):
             "pc_type": "bjacobi",
             "sub_pc_type": "ilu",
         })
+        self._isfrozen = False
         self.solver = LinearVariationalSolver(prob, **kwargs)
+        self._isfrozen = True
 
     @PETSc.Log.EventDecorator("thetis.VorticityCalculator2D.solve")
     def solve(self):
