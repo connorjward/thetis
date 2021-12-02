@@ -2,9 +2,10 @@
 Classes for computing diagnostics.
 """
 from .utility import *
+from .configuration import *
 
 
-__all__ = ["VorticityCalculator2D", "HessianRecoverer2D"]
+__all__ = ["VorticityCalculator2D", "HessianRecoverer2D", "DynamicPressureCalculator"]
 
 
 class VorticityCalculator2D(object):
@@ -147,3 +148,28 @@ class HessianRecoverer2D(object):
         self.hessian_2d.assign(self._hessian)
         if self.gradient_2d is not None:
             self.gradient_2d.assign(self._gradient)
+
+
+class DynamicPressureCalculator(FrozenHasTraits):
+    r"""
+    Class for calculating dynamic pressure (i.e. kinetic energy).
+    """
+    density = FiredrakeScalarExpression(
+        Constant(1030.0), help='Fluid density').tag(config=True)
+
+    @PETSc.Log.EventDecorator("thetis.DynamicPressureCalculator.__init__")
+    def __init__(self, uv, dp, density=Constant(1030.0)):
+        """
+        :arg uv: scalar expression for the fluid velocity.
+        :arg dp: :class:`Function` to hold calculated dynamic pressure.
+        :kwarg density: fluid density.
+        """
+        self.density = density
+        self._isfrozen = False
+        self.dp = dp
+        self.dp_expr = 0.5*self.density*dot(uv, uv)
+        self._isfrozen = True
+
+    @PETSc.Log.EventDecorator("thetis.DynamicPressureCalculator.solve")
+    def solve(self):
+        self.dp.interpolate(self.dp_expr)
