@@ -187,3 +187,91 @@ class DynamicPressureCalculator(FrozenHasTraits):
     @PETSc.Log.EventDecorator("thetis.DynamicPressureCalculator.solve")
     def solve(self):
         self.dp.interpolate(self.dp_expr)
+
+
+class TracerResidualCalculator2D(object):
+    """
+    Base class for evaluating residuals related to 2D tracer equations
+    as piece-wise constant fields.
+    """
+    __metaclass__ = ABCMeta
+
+    def __init__(self, label, residual_2d, solver_obj):
+        """
+        :arg label: the label for the tracer field.
+        :arg residual_2d: :class:`Function` to hold the residual.
+        :arg solver_obj: :class:`FlowSolver2d` object defining the problem.
+        """
+        element = residual_2d.ufl_element()
+        if not (element.family() == 'Discontinuous Lagrange' and element.degree() == 0):
+            raise ValueError(f"Residual should be P0, not {element}")
+        self.residual_2d = residual_2d
+        if label not in solver_obj.options.tracer:
+            raise ValueError(f"{label} is not a valid tracer label")
+        if label not in solver_obj.fields:
+            raise ValueError(f"{label} is not a valid field label")
+
+    @abstractmethod
+    def solve(self):
+        pass
+
+
+class TracerStrongResidualCalculator2D(TracerResidualCalculator2D):
+    """
+    Class for evaluating the strong residual of a 2D tracer equation
+    as a piece-wise constant field.
+    """
+    @PETSc.Log.EventDecorator("thetis.TracerStrongResidualCalculator2D.__init__")
+    def __init__(self, label, residual_2d, solver_obj):
+        """
+        :arg label: the label for the tracer field.
+        :arg residual_2d: :class:`Function` to hold strong residual.
+        :arg solver_obj: :class:`FlowSolver2d` object defining the problem.
+        """
+        super().__(label, residual_2d, solver_obj)
+        c = solver_obj.fields[label]
+
+        # Get parameters
+        uv = solver_obj.fields.uv_2d
+        D = options.tracer[label].diffusivity
+        S = options.tracer[label].source
+
+        # Strong residual expression
+        self.res_expr = -dot(uv, grad(c))
+        if D is not None:
+            self.res_expr += div(D*grad(c))
+        if S is not None:
+            self.res_expr += S
+
+    @PETSc.Log.EventDecorator("thetis.TracerStrongResidualCalculator2D.solve")
+    def solve(self):
+        self.residual_2d.interpolate(self.res_expr)
+
+
+class TracerFluxResidualCalculator2D(TracerResidualCalculator2D):
+    """
+    Class for evaluating the flux residual of a 2D tracer equation
+    as a piece-wise constant field.
+    """
+    @PETSc.Log.EventDecorator("thetis.TracerFluxResidualCalculator2D.__init__")
+    def __init__(self, label, residual_2d, solver_obj):
+        """
+        :arg label: the label for the tracer field.
+        :arg residual_2d: :class:`Function` to hold flux residual.
+        :arg solver_obj: :class:`FlowSolver2d` object defining the problem.
+        """
+        super().__(label, residual_2d, solver_obj)
+        c = solver_obj.fields[label]
+
+        # Get parameters
+        uv = solver_obj.fields.uv_2d
+        D = options.tracer[label].diffusivity
+        S = options.tracer[label].source
+
+        # Flux residual expression
+        self.res_expr = 0
+        raise NotImplementedError  # TODO
+
+    @PETSc.Log.EventDecorator("thetis.TracerFluxResidualCalculator2D.solve")
+    def solve(self):
+        raise NotImplementedError  # TODO
