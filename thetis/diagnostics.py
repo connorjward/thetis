@@ -222,3 +222,54 @@ class KineticEnergyCalculator(DiagnosticCalculator):
         else:
             assert hasattr(self, 'interpolator')
             self.interpolator.interpolate()
+
+
+class ErrorEstimator(DiagnosticCalculator):
+    """
+    Base class for estimating errors.
+    """
+    __metaclass__ = ABCMeta
+
+    @unfrozen
+    def __init__(self, solver_obj, norm_type='L2'):
+        """
+        :arg mesh: mesh upon which the problem is discretized
+        :arg options: :class:`CommonModelOptions` object
+        :kwarg norm_type: choose from 'L1' and 'L2'
+        """
+        self.solver_obj = solver_obj
+        self.options = solver_obj.options
+        if norm_type not in ('L1', 'L2'):
+            raise ValueError(f'Norm type {norm_type} not supported')
+        self.norm_type = norm_type
+
+    @abstractmethod
+    def residual(self):
+        pass
+
+    @abstractmethod
+    def fluxes(self):
+        pass
+
+
+class TracerErrorEstimator2D(ErrorEstimator):
+    """
+    Class for estimating errors related to 2D tracer
+    transport problems.
+    """
+    def __init__(self, mesh, options, name, norm_type='L2'):
+        """
+        :arg mesh: mesh upon which the problem is discretized
+        :arg options: :class:`CommonModelOptions` object
+        :arg name: label used for the tracer field
+        :kwarg norm_type: choose from 'L1' and 'L2'
+        """
+        super().__init__(solver_obj, norm_type=norm_type)
+        self.timestepper = self.solver_obj.timestepper.timesteppers[name]
+
+    @property
+    def residual(self):
+        assert hasattr(self.timestepper, 'R')
+        return assemble(self.timestepper.R)
+
+    # TODO: fluxes
