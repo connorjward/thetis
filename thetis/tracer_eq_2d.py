@@ -275,7 +275,7 @@ class TracerEquation2D(Equation):
         """
         :arg function_space: :class:`FunctionSpace` where the solution belongs
         :arg depth: :class: `DepthExpression` containing depth info
-        :arg options: :class`ModelOptions2d` containing parameters
+        :arg options: :class:`ModelOptions2d` containing parameters
         :arg velocity: velocity field associated with the shallow water model
         """
         super(TracerEquation2D, self).__init__(function_space)
@@ -283,19 +283,29 @@ class TracerEquation2D(Equation):
         # Apply SUPG stabilisation
         kwargs = {}
         if options.use_supg_tracer:
-            unorm = options.horizontal_velocity_scale
-            if unorm.values()[0] > 0:
-                self.cellsize = anisotropic_cell_size(function_space.mesh())
-                tau = 0.5*self.cellsize/unorm
-                D = options.horizontal_diffusivity_scale
-                if D.values()[0] > 0:
-                    Pe = 0.5*unorm*self.cellsize/D
-                    tau = min_value(tau, Pe/3)
-                self.test = self.test + tau*dot(velocity, grad(self.test))
-                kwargs['test_function'] = self.test
+            self.test = self.apply_supg(options, v)
+            kwargs['test_function'] = self.test
 
         args = (function_space, depth, options)
         self.add_terms(*args, **kwargs)
+
+    def apply_supg(self, options, v):
+        """
+        Modify a test function so that SUPG stabilisation is applied
+
+        :arg options: :class:`ModelOptions2d` containing parameters
+        :arg v: the unmodified test function
+        """
+        unorm = options.horizontal_velocity_scale
+        if unorm.values()[0] > 0:
+            self.cellsize = anisotropic_cell_size(function_space.mesh())
+            tau = 0.5*self.cellsize/unorm
+            D = options.horizontal_diffusivity_scale
+            if D.values()[0] > 0:
+                Pe = 0.5*unorm*self.cellsize/D
+                tau = min_value(tau, Pe/3)
+            v = v + tau*dot(velocity, grad(v))
+        return v
 
     def add_terms(self, *args, **kwargs):
         self.add_term(HorizontalAdvectionTerm(*args, **kwargs), 'explicit')
