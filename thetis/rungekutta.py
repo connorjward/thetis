@@ -447,7 +447,7 @@ class DIRKGeneric(RungeKuttaTimeIntegrator):
     :attr:`b`, :attr:`c`.
     """
     @PETSc.Log.EventDecorator("thetis.DIRKGeneric.__init__")
-    def __init__(self, equation, solution, fields, dt, options, bnd_conditions, terms_to_add='all'):
+    def __init__(self, equation, solution, fields, dt, options, bnd_conditions, terms_to_add='all', adjoint_solution=None):
         """
         :arg equation: the equation to solve
         :type equation: :class:`Equation` object
@@ -460,6 +460,7 @@ class DIRKGeneric(RungeKuttaTimeIntegrator):
         :kwarg terms_to_add: Defines which terms of the equation are to be
             added to this solver. Default 'all' implies ['implicit', 'explicit', 'source'].
         :type terms_to_add: 'all' or list of 'implicit', 'explicit', 'source'.
+        :kwarg adjoint_solution: Optional :class:`Function` to facilitate error estimation
         """
         super(DIRKGeneric, self).__init__(equation, solution, fields, dt, options)
         semi_implicit = False
@@ -527,6 +528,9 @@ class DIRKGeneric(RungeKuttaTimeIntegrator):
             self.sol_expressions.append(sol_expr)
         self.final_sol_expr = u_old + sum(map(operator.mul, self.k, self.dt_const*self.b))
 
+        if adjoint_solution is not None:
+            raise NotImplementedError('Error estimation not yet implemented for {type(self)} integrators')
+
     @PETSc.Log.EventDecorator("thetis.DIRKGeneric.update_solver")
     def update_solver(self):
         """Create solver objects"""
@@ -585,7 +589,7 @@ class DIRKGenericUForm(RungeKuttaTimeIntegrator):
     cfl_coeff = CFL_UNCONDITIONALLY_STABLE
 
     @PETSc.Log.EventDecorator("thetis.DIRKGenericUForm.__init__")
-    def __init__(self, equation, solution, fields, dt, options, bnd_conditions, terms_to_add='all'):
+    def __init__(self, equation, solution, fields, dt, options, bnd_conditions, terms_to_add='all', adjoint_solution=None):
         """
         :arg equation: the equation to solve
         :type equation: :class:`Equation` object
@@ -598,6 +602,7 @@ class DIRKGenericUForm(RungeKuttaTimeIntegrator):
         :kwarg terms_to_add: Defines which terms of the equation are to be
             added to this solver. Default 'all' implies ['implicit', 'explicit', 'source'].
         :type terms_to_add: 'all' or list of 'implicit', 'explicit', 'source'.
+        :kwarg adjoint_solution: Optional :class:`Function` to facilitate error estimation
         """
         super().__init__(equation, solution, fields, dt, options)
         semi_implicit = options.use_semi_implicit_linearization
@@ -653,6 +658,9 @@ class DIRKGenericUForm(RungeKuttaTimeIntegrator):
             self.k_form.append(kf)
 
         self.update_solver()
+
+        if adjoint_solution is not None:
+            raise NotImplementedError('Error estimation not yet implemented for {type(self)} integrators')
 
     @PETSc.Log.EventDecorator("thetis.DIRKGenericUForm.update_solver")
     def update_solver(self):
@@ -770,7 +778,7 @@ class ERKGeneric(RungeKuttaTimeIntegrator):
     Implements the Butcher form. All terms in the equation are treated explicitly.
     """
     @PETSc.Log.EventDecorator("thetis.ERKGeneric.__init__")
-    def __init__(self, equation, solution, fields, dt, options, bnd_conditions, terms_to_add='all'):
+    def __init__(self, equation, solution, fields, dt, options, bnd_conditions, terms_to_add='all', adjoint_solution=None):
         """
         :arg equation: the equation to solve
         :type equation: :class:`Equation` object
@@ -783,6 +791,7 @@ class ERKGeneric(RungeKuttaTimeIntegrator):
         :kwarg terms_to_add: Defines which terms of the equation are to be
             added to this solver. Default 'all' implies ['implicit', 'explicit', 'source'].
         :type terms_to_add: 'all' or list of 'implicit', 'explicit', 'source'.
+        :kwarg adjoint_solution: Optional :class:`Function` to facilitate error estimation
         """
         super(ERKGeneric, self).__init__(equation, solution, fields, dt, options)
         self._initialized = False
@@ -808,6 +817,9 @@ class ERKGeneric(RungeKuttaTimeIntegrator):
             self.final_sol_expr = sum(map(operator.mul, self.tendency, self.b))
 
         self.update_solver()
+
+        if adjoint_solution is not None:
+            raise NotImplementedError('Error estimation not yet implemented for {type(self)} integrators')
 
     @PETSc.Log.EventDecorator("thetis.ERKGeneric.update_solver")
     def update_solver(self):
@@ -878,7 +890,7 @@ class ERKGenericShuOsher(TimeIntegrator):
     Implements the Shu-Osher form.
     """
     @PETSc.Log.EventDecorator("thetis.ERKGenericShuOsher.__init__")
-    def __init__(self, equation, solution, fields, dt, options, bnd_conditions, terms_to_add='all'):
+    def __init__(self, equation, solution, fields, dt, options, bnd_conditions, terms_to_add='all', adjoint_solution=None):
         """
         :arg equation: the equation to solve
         :type equation: :class:`Equation` object
@@ -891,6 +903,7 @@ class ERKGenericShuOsher(TimeIntegrator):
         :kwarg terms_to_add: Defines which terms of the equation are to be
             added to this solver. Default 'all' implies ['implicit', 'explicit', 'source'].
         :type terms_to_add: 'all' or list of 'implicit', 'explicit', 'source'.
+        :kwarg adjoint_solution: Optional :class:`Function` to facilitate error estimation
         """
         super(ERKGenericShuOsher, self).__init__(equation, solution, fields, dt, options)
 
@@ -918,6 +931,9 @@ class ERKGenericShuOsher(TimeIntegrator):
                 self.sol_expressions.append(sol_expr)
 
         self.update_solver()
+
+        if adjoint_solution is not None:
+            raise NotImplementedError('Error estimation not yet implemented for {type(self)} integrators')
 
     @PETSc.Log.EventDecorator("thetis.ERKGenericShuOsher.update_solver")
     def update_solver(self):

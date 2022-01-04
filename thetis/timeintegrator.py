@@ -92,7 +92,7 @@ class ForwardEuler(TimeIntegrator):
     cfl_coeff = 1.0
 
     @PETSc.Log.EventDecorator("thetis.ForwardEuler.__init__")
-    def __init__(self, equation, solution, fields, dt, options, bnd_conditions):
+    def __init__(self, equation, solution, fields, dt, options, bnd_conditions, adjoint_solution=None):
         """
         :arg equation: the equation to solve
         :type equation: :class:`Equation` object
@@ -102,6 +102,7 @@ class ForwardEuler(TimeIntegrator):
         :arg float dt: time step in seconds
         :arg options: :class:`TimeStepperOptions` instance containing parameter values.
         :arg dict bnd_conditions: Dictionary of boundary conditions passed to the equation
+        :kwarg adjoint_solution: Optional :class:`Function` to facilitate error estimation
         """
         super(ForwardEuler, self).__init__(equation, solution, fields, dt, options)
         self.solution_old = Function(self.equation.function_space)
@@ -124,6 +125,8 @@ class ForwardEuler(TimeIntegrator):
                   )
 
         self.update_solver()
+        if adjoint_solution is not None:
+            raise NotImplementedError('Error estimation not yet implemented for {type(self)} integrators')
 
     @PETSc.Log.EventDecorator("thetis.ForwardEuler.update_solver")
     def update_solver(self):
@@ -157,7 +160,7 @@ class CrankNicolson(TimeIntegrator):
     cfl_coeff = CFL_UNCONDITIONALLY_STABLE
 
     @PETSc.Log.EventDecorator("thetis.CrankNicolson.__init__")
-    def __init__(self, equation, solution, fields, dt, options, bnd_conditions):
+    def __init__(self, equation, solution, fields, dt, options, bnd_conditions, adjoint_solution=None):
         """
         :arg equation: the equation to solve
         :type equation: :class:`Equation` object
@@ -167,6 +170,7 @@ class CrankNicolson(TimeIntegrator):
         :arg float dt: time step in seconds
         :arg options: :class:`TimeStepperOptions` instance containing parameter values.
         :arg dict bnd_conditions: Dictionary of boundary conditions passed to the equation
+        :kwarg adjoint_solution: Optional :class:`Function` to facilitate error estimation
         """
         super(CrankNicolson, self).__init__(equation, solution, fields, dt, options)
         theta = options.implicitness_theta
@@ -208,6 +212,14 @@ class CrankNicolson(TimeIntegrator):
                   )
 
         self.update_solver()
+        if adjoint_solution is not None:
+            if len(self.function_space.dof_dset.dim) > 1:
+                raise NotImplementedError('Have not considered mixed spaces yet')
+            indicator = self.equation.indicator
+            self.R = (self.equation.mass_term(u, adjoint_solution, indicator) - self.equation.mass_term(u_old, adjoint_solution, indicator)
+                      - self.dt_const*(theta_const*self.equation.strong_residual('all', u, u_nl, f, f, adjoint_solution)
+                                       + (1-theta_const)*self.equation.strong_residual('all', u_old, u_old, f_old, f_old, adjoint_solution))
+                      )
 
     @PETSc.Log.EventDecorator("thetis.CrankNicolson.update_solver")
     def update_solver(self):
@@ -262,7 +274,7 @@ class SteadyState(TimeIntegrator):
     cfl_coeff = CFL_UNCONDITIONALLY_STABLE
 
     @PETSc.Log.EventDecorator("thetis.SteadyState.__init__")
-    def __init__(self, equation, solution, fields, dt, options, bnd_conditions):
+    def __init__(self, equation, solution, fields, dt, options, bnd_conditions, adjoint_solution=None):
         """
         :arg equation: the equation to solve
         :type equation: :class:`Equation` object
@@ -272,11 +284,16 @@ class SteadyState(TimeIntegrator):
         :arg float dt: time step in seconds
         :arg options: :class:`TimeStepperOptions` instance containing parameter values.
         :arg dict bnd_conditions: Dictionary of boundary conditions passed to the equation
+        :kwarg adjoint_solution: Optional :class:`Function` to facilitate error estimation
         """
         super(SteadyState, self).__init__(equation, solution, fields, dt, options)
         self.solver_parameters.setdefault('snes_type', 'newtonls')
         self.F = self.equation.residual('all', solution, solution, fields, fields, bnd_conditions)
         self.update_solver()
+        if adjoint_solution is not None:
+            if len(self.function_space.dof_dset.dim) > 1:
+                raise NotImplementedError('Have not considered mixed spaces yet')
+            self.R = self.equation.strong_residual('all', solution, solution, fields, fields, adjoint_solution)
 
     @PETSc.Log.EventDecorator("thetis.SteadyState.update_solver")
     def update_solver(self):
@@ -314,7 +331,7 @@ class PressureProjectionPicard(TimeIntegrator):
 
     # TODO add more documentation
     @PETSc.Log.EventDecorator("thetis.PressureProjectionPicard.__init__")
-    def __init__(self, equation, equation_mom, solution, fields, dt, options, bnd_conditions):
+    def __init__(self, equation, equation_mom, solution, fields, dt, options, bnd_conditions, adjoint_solution=None):
         """
         :arg equation: free surface equation
         :type equation: :class:`Equation` object
@@ -326,6 +343,7 @@ class PressureProjectionPicard(TimeIntegrator):
         :arg float dt: time step in seconds
         :arg options: :class:`TimeStepperOptions` instance containing parameter values.
         :arg dict bnd_conditions: Dictionary of boundary conditions passed to the equation
+        :kwarg adjoint_solution: Optional :class:`Function` to facilitate error estimation
         """
         super(PressureProjectionPicard, self).__init__(equation, solution, fields, dt, options)
         theta = options.implicitness_theta
@@ -429,6 +447,8 @@ class PressureProjectionPicard(TimeIntegrator):
                 )
 
         self.update_solver()
+        if adjoint_solution is not None:
+            raise NotImplementedError('Error estimation not yet implemented for {type(self)} integrators')
 
     @PETSc.Log.EventDecorator("thetis.PressureProjectionPicard.update_solver")
     def update_solver(self):
@@ -495,7 +515,7 @@ class LeapFrogAM3(TimeIntegrator):
     cfl_coeff = 1.5874
 
     @PETSc.Log.EventDecorator("thetis.LeapFrogAM3.__init__")
-    def __init__(self, equation, solution, fields, dt, options, bnd_conditions, terms_to_add='all'):
+    def __init__(self, equation, solution, fields, dt, options, bnd_conditions, terms_to_add='all', adjoint_solution=None):
         """
         :arg equation: equation to solve
         :type equation: :class:`Equation` object
@@ -508,6 +528,7 @@ class LeapFrogAM3(TimeIntegrator):
         :kwarg terms_to_add: Defines which terms of the equation are to be
             added to this solver. Default 'all' implies ['implicit', 'explicit', 'source'].
         :type terms_to_add: 'all' or list of 'implicit', 'explicit', 'source'.
+        :kwarg adjoint_solution: Optional :class:`Function` to facilitate error estimation
         """
         super(LeapFrogAM3, self).__init__(equation, solution, fields, dt, options)
 
@@ -535,6 +556,9 @@ class LeapFrogAM3(TimeIntegrator):
         self.l_prediction = a*self.mass_old + b*self.mass_new + c*self.l
 
         self._nontrivial = self.l != 0
+
+        if adjoint_solution is not None:
+            raise NotImplementedError('Error estimation not yet implemented for {type(self)} integrators')
 
     @PETSc.Log.EventDecorator("thetis.LeapFrogAM3.initialize")
     def initialize(self, solution):
@@ -635,7 +659,7 @@ class SSPRK22ALE(TimeIntegrator):
     cfl_coeff = 1.0
 
     @PETSc.Log.EventDecorator("thetis.SSPRK22ALE.__init__")
-    def __init__(self, equation, solution, fields, dt, options, bnd_conditions, terms_to_add='all'):
+    def __init__(self, equation, solution, fields, dt, options, bnd_conditions, terms_to_add='all', adjoint_solution=None):
         """
         :arg equation: equation to solve
         :type equation: :class:`Equation` object
@@ -648,6 +672,7 @@ class SSPRK22ALE(TimeIntegrator):
         :kwarg terms_to_add: Defines which terms of the equation are to be
             added to this solver. Default 'all' implies ['implicit', 'explicit', 'source'].
         :type terms_to_add: 'all' or list of 'implicit', 'explicit', 'source'.
+        :kwarg adjoint_solution: Optional :class:`Function` to facilitate error estimation
         """
         super(SSPRK22ALE, self).__init__(equation, solution, fields, dt, options)
 
@@ -670,6 +695,9 @@ class SSPRK22ALE(TimeIntegrator):
 
         self.n_stages = 2
         self.c = [0, 1]
+
+        if adjoint_solution is not None:
+            raise NotImplementedError('Error estimation not yet implemented for {type(self)} integrators')
 
     @PETSc.Log.EventDecorator("thetis.SSPRK22ALE.initialize")
     def initialize(self, solution):

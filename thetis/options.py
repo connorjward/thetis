@@ -668,6 +668,9 @@ class CommonModelOptions(FrozenConfigurable):
     sipg_factor_tracer = FiredrakeScalarExpression(
         Constant(1.0), help="Penalty parameter scaling factor for horizontal diffusivity terms.").tag(config=True)
 
+    estimate_errors = Bool(
+        False, help="Turn on error estimation").tag(config=True)
+
 
 @attach_paired_options("sediment_timestepper_type",
                        PairedEnum([('SSPRK33', ExplicitTracerTimeStepperOptions2d),

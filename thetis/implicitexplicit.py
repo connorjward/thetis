@@ -30,7 +30,7 @@ class IMEXGeneric(TimeIntegrator):
         pass
 
     @PETSc.Log.EventDecorator("thetis.IMEXGeneric.__init__")
-    def __init__(self, equation, solution, fields, dt, options, bnd_conditions):
+    def __init__(self, equation, solution, fields, dt, options, bnd_conditions, adjoint_solution=None):
         """
         :arg equation: equation to solve
         :type equation: :class:`Equation` object
@@ -40,6 +40,7 @@ class IMEXGeneric(TimeIntegrator):
         :arg float dt: time step in seconds
         :arg options: :class:`TimeStepperOptions` instance containing parameter values.
         :arg dict bnd_conditions: Dictionary of boundary conditions passed to the equation
+        :kwarg adjoint_solution: Optional :class:`Function` to facilitate error estimation
         """
         super(IMEXGeneric, self).__init__(equation, solution, fields, dt, options)
         # NOTE: The same solver parameters are currently used for both implicit and explicit schemes
@@ -59,6 +60,9 @@ class IMEXGeneric(TimeIntegrator):
         # FIXME this assumes that we are limited by whatever ERK solves ...
         # FIXME may violate max DIRK SSP time step (if any)
         self.cfl_coeff = self.erk.cfl_coeff
+
+        if adjoint_solution is not None:
+            raise NotImplementedError('Error estimation not yet implemented for {type(self)} integrators')
 
     @PETSc.Log.EventDecorator("thetis.IMEXGeneric.update_solver")
     def update_solver(self):

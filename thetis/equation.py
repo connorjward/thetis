@@ -95,13 +95,20 @@ class Equation(object):
         self.xyz = SpatialCoordinate(self.mesh)
         self.e_x, self.e_y, self.e_y = unit_vectors(3)
 
-    def mass_term(self, solution):
+        P0 = get_functionspace(self.mesh, 'DG', 0)
+        self.indicator = TestFunction(P0)
+
+    def mass_term(self, solution, test_function=None, scaling=None):
         """
         Returns default mass matrix term for the solution function space.
 
         :returns: UFL form of the mass term
         """
-        return inner(solution, self.test) * dx
+        test_function = test_function or self.test
+        if scaling is not None:
+            return scaling*inner(solution, test_function)*dx(domain=self.mesh)
+        else:
+            return inner(solution, test_function)*dx(domain=self.mesh)
 
     def add_term(self, term, label):
         """

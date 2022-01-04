@@ -410,6 +410,8 @@ class FlowSolver2d(FrozenClass):
             self.depth,
             self.options,
         )
+        if self.options.estimate_errors:
+            self.fields.adjoint_2d = Function(self.function_spaces.V_2d, name='adjoint_2d')
         self.equations.sw.bnd_functions = self.bnd_functions['shallow_water']
         uv_2d, elev_2d = self.fields.solution_2d.split()
         for label, tracer in self.options.tracer.items():
@@ -425,6 +427,13 @@ class FlowSolver2d(FrozenClass):
             else:
                 self.equations[label] = tracer_eq_2d.TracerEquation2D(
                     self.function_spaces.Q_2d, self.depth, self.options, uv_2d)
+            if self.options.estimate_errors:
+                self.add_new_field(Function(self.function_spaces.Q_2d, name='adjoint_' + label),
+                                   'adjoint_' + label,
+                                   'Adjoint ' + tracer.metadata['name'],
+                                   'Adjoint' + tracer.metadata['filename'],
+                                   'Adjoint ' + tracer.metadata['shortname'],
+                                   unit=tracer.metadata['unit'])
         self.solve_tracer = self.options.tracer != {}
         if self.solve_tracer:
             if self.options.use_limiter_for_tracers and self.options.polynomial_degree > 0:
@@ -442,6 +451,8 @@ class FlowSolver2d(FrozenClass):
             self.equations.sediment = sediment_eq_2d.SedimentEquation2D(
                 self.function_spaces.Q_2d, self.depth, self.options, self.sediment_model,
                 conservative=sediment_options.use_sediment_conservative_form)
+            if self.options.estimate_errors:
+                raise NotImplementedError('Error estimators not yet implemented for the sediment model')
             if self.options.use_limiter_for_tracers and self.options.polynomial_degree > 0:
                 self.tracer_limiter = limiter.VertexBasedP1DGLimiter(self.function_spaces.Q_2d)
             else:
@@ -454,6 +465,8 @@ class FlowSolver2d(FrozenClass):
                     depth_integrated_sediment=sediment_options.use_sediment_conservative_form, sediment_model=self.sediment_model)
             else:
                 raise NotImplementedError("Exner equation can currently only be implemented if the bathymetry is defined on a continuous space")
+            if self.options.estimate_errors:
+                raise NotImplementedError('Error estimators not yet implemented for the sediment model')
 
         if self.options.nh_model_options.solve_nonhydrostatic_pressure:
             print_output('Using non-hydrostatic pressure')
@@ -468,6 +481,8 @@ class FlowSolver2d(FrozenClass):
                 TestFunction(self.function_spaces.H_2d), self.function_spaces.H_2d, self.function_spaces.U_2d,
                 self.depth, self.options)
             self.equations.fs.bnd_functions = self.bnd_functions['shallow_water']
+            if self.options.estimate_errors:
+                raise NotImplementedError('Error estimators not yet implemented for the non-hydrostatic model')
 
     @PETSc.Log.EventDecorator("thetis.FlowSolver2d.get_swe_timestepper")
     def get_swe_timestepper(self, integrator):
@@ -488,6 +503,7 @@ class FlowSolver2d(FrozenClass):
             'volume_source': self.options.volume_source_2d,
         }
         bnd_conditions = self.bnd_functions['shallow_water']
+        adjoint_solution = self.fields.get('adjoint_2d')
         if self.options.swe_timestepper_type == 'PressureProjectionPicard':
             u_test = TestFunction(self.function_spaces.U_2d)
             self.equations.mom = shallowwater_eq.ShallowWaterMomentumEquation(
@@ -497,10 +513,12 @@ class FlowSolver2d(FrozenClass):
             )
             self.equations.mom.bnd_functions = bnd_conditions
             return integrator(self.equations.sw, self.equations.mom, self.fields.solution_2d,
-                              fields, self.dt, self.options.swe_timestepper_options, bnd_conditions)
+                              fields, self.dt, self.options.swe_timestepper_options, bnd_conditions,
+                              adjoint_solution=adjoint_solution)
         else:
             return integrator(self.equations.sw, self.fields.solution_2d, fields, self.dt,
-                              self.options.swe_timestepper_options, bnd_conditions)
+                              self.options.swe_timestepper_options, bnd_conditions,
+                              adjoint_solution=adjoint_solution)
 
     @PETSc.Log.EventDecorator("thetis.FlowSolver2d.get_tracer_timestepper")
     def get_tracer_timestepper(self, integrator, label):
@@ -521,9 +539,11 @@ class FlowSolver2d(FrozenClass):
             bcs = self.bnd_functions[label]
         elif label[:-3] in self.bnd_functions:
             bcs = self.bnd_functions[label[:-3]]
+        adjoint_solution = self.fields.get('adjoint_' + label)
         # TODO: Different timestepper options for different tracers
         return integrator(self.equations[label], self.fields[label], fields, self.dt,
-                          self.options.tracer_timestepper_options, bcs)
+                          self.options.tracer_timestepper_options, bcs,
+                          adjoint_solution=adjoint_solution)
 
     @PETSc.Log.EventDecorator("thetis.FlowSolver2d.get_sediment_timestepper")
     def get_sediment_timestepper(self, integrator):
