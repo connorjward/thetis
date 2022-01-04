@@ -162,6 +162,57 @@ class HorizontalAdvectionTerm(TracerTerm):
 
         return -f
 
+    def dwr_cell(self, solution, solution_old, fields, fields_old, adjoint, indicator):
+        if fields_old.get('uv_2d') is None:
+            return 0
+        self.corr_factor = fields_old.get('tracer_advective_velocity_factor')
+        uv = self.corr_factor * fields_old['uv_2d']
+        R = indicator*inner(adjoint, uv*grad(solution))*self.dx
+        return -R
+
+    def dwr_flux(self, solution, solution_old, fields, fields_old, adjoint, indicator):
+        if fields_old.get('uv_2d') is None:
+            return 0
+        elev = fields_old['elev_2d']
+        self.corr_factor = fields_old.get('tracer_advective_velocity_factor')
+        uv = self.corr_factor * fields_old['uv_2d']
+        lax_friedrichs_factor = fields_old.get('lax_friedrichs_tracer_scaling_factor')
+
+        # Contributions from domain interior
+        r = -jump(adjoint*inner(uv*c, self.n), indicator)*self.dS
+        if self.horizontal_dg:
+            uv_av = avg(uv)
+            un_av = (uv_av[0]*self.normal('-')[0]
+                     + uv_av[1]*self.normal('-')[1])
+            s = 0.5*(sign(un_av) + 1.0)
+            c_up = solution('-')*s + solution('+')*(1-s)
+
+            r += jump(adjoint, indicator)*c_up*(uv[0] * self.normal[0]
+                                                + uv[1] * self.normal[1])*self.dS
+
+            if self.options.use_lax_friedrichs_tracer:
+                gamma = 0.5*abs(un_av)*lax_friedrichs_factor
+                r += gamma*dot(jump(adjoint, indicator), jump(solution))*self.dS
+
+        # Contributions from boundary
+        for bnd_marker in self.boundary_markers:
+            funcs = bnd_conditions.get(bnd_marker)
+            ds_bnd = ds(int(bnd_marker), degree=self.quad_degree)
+            c_in = solution
+            r += -indicator*adjoint*inner(uv*c_in, self.n)*ds_bnd
+            if funcs is not None:
+                c_ext, uv_ext, eta_ext = self.get_bnd_functions(c_in, uv, elev, bnd_marker, bnd_conditions)
+                uv_av = 0.5*(uv + uv_ext)
+                un_av = self.normal[0]*uv_av[0] + self.normal[1]*uv_av[1]
+                s = 0.5*(sign(un_av) + 1.0)
+                c_up = c_in*s + c_ext*(1-s)
+                r += indicator*adjoint*c_up*(uv_av[0]*self.normal[0]
+                                             + uv_av[1]*self.normal[1])*ds_bnd
+            else:
+                r += indicator*adjoint*c_in*(uv[0]*self.normal[0]
+                                             + uv[1]*self.normal[1])*ds_bnd
+        return -r
+
 
 class HorizontalDiffusionTerm(TracerTerm):
     r"""
@@ -246,6 +297,66 @@ class HorizontalDiffusionTerm(TracerTerm):
 
         return -f
 
+    def dwr_cell(self, solution, solution_old, fields, fields_old, adjoint, indicator):
+        if fields_old.get('diffusivity_h') is None:
+            return 0
+        diffusivity_h = fields_old['diffusivity_h']
+        diff_tensor = as_matrix([[diffusivity_h, 0, ],
+                                 [0, diffusivity_h, ]])
+        diff_flux = dot(diff_tensor, grad(solution))
+        R = -indicator*inner(adjoint, div(diff_flux))*self.dx
+        return -R
+
+    def dwr_flux(self, solution, solution_old, fields, fields_old, adjoint, indicator):
+        if fields_old.get('diffusivity_h') is None:
+            return 0
+        diffusivity_h = fields_old['diffusivity_h']
+        diff_tensor = as_matrix([[diffusivity_h, 0, ],
+                                 [0, diffusivity_h, ]])
+        sipg_factor = self.options.sipg_factor_tracer
+
+        # Contributions from domain interior
+        r = jump(inner(D*grad(solution), adjoint*self.n), indicator)*self.dS
+        if self.horizontal_dg:
+            cell = self.mesh.ufl_cell()
+            p = self.function_space.ufl_element().degree()
+            cp = (p + 1) * (p + 2) / 2 if cell == triangle else (p + 1)**2
+            l_normal = CellVolume(self.mesh) / FacetArea(self.mesh)
+            sigma = sipg_factor * cp / l_normal
+            sp = sigma('+')
+            sm = sigma('-')
+            sigma_max = conditional(sp > sm, sp, sm)
+            r += sigma_max*inner(
+                jump(adjoint*self.normal, indicator),
+                dot(avg(diff_tensor), jump(solution, self.normal)))*self.dS
+            r += -inner(avg(dot(diff_tensor, grad(0.5*indicator*adjoint))),
+                        jump(solution, self.normal))*self.dS
+            r += -inner(jump(adjoint*self.normal, indicator),
+                        avg(dot(diff_tensor, grad(solution))))*self.dS
+
+        # Contributions from boundary
+        for bnd_marker in self.boundary_markers:
+            funcs = bnd_conditions.get(bnd_marker)
+            ds_bnd = ds(int(bnd_marker), degree=self.quad_degree)
+            c_in = solution
+            r += indicator*inner(dot(diff_tensor, grad(c_in)), adjoint*self.normal)*ds_bnd
+            elev = fields_old['elev_2d']
+            self.corr_factor = fields_old.get('tracer_advective_velocity_factor')
+            uv = self.corr_factor * fields_old['uv_2d']
+            if funcs is not None:
+                if 'diff_flux' in funcs:
+                    r += -indicator*adjoint*funcs['diff_flux']*ds_bnd
+                else:
+                    c_ext, uv_ext, eta_ext = self.get_bnd_functions(c_in, uv, elev, bnd_marker, bnd_conditions)
+                    uv_av = 0.5*(uv + uv_ext)
+                    un_av = self.normal[0]*uv_av[0] + self.normal[1]*uv_av[1]
+                    s = 0.5*(sign(un_av) + 1.0)
+                    c_up = c_in*s + c_ext*(1-s)
+                    diff_flux_up = dot(diff_tensor, grad(c_up))
+                    r += -indicator*adjoint*dot(diff_flux_up, self.normal)*ds_bnd
+
+        return -r
+
 
 class SourceTerm(TracerTerm):
     r"""
@@ -265,6 +376,16 @@ class SourceTerm(TracerTerm):
         if source is not None:
             f += -inner(source, self.test)*self.dx
         return -f
+
+    def dwr_cell(self, solution, solution_old, fields, fields_old, adjoint, indicator):
+        R = 0
+        source = fields_old.get('source')
+        if source is not None:
+            R += -indicator*inner(source, adjoint)*self.dx
+        return -R
+
+    def dwr_flux(self, solution, solution_old, fields, fields_old, adjoint, indicator):
+        return 0
 
 
 class TracerEquation2D(Equation):

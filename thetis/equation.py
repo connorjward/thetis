@@ -248,9 +248,7 @@ class Equation(object):
         :arg fields_old: Time lagged dictionary of fields
         :arg adjoint: solution :class:`.Function` of the corresponding adjoint equation
         """
-        if norm_type not in ('L1', 'L2'):
-            raise ValueError(f'Norm type {norm_type} not supported')
-        residuals = 0
+        R = 0
         for term in self.select_terms(label):
             R += term.strong_residual(solution, solution_old, fields, fields_old, adjoint, self.indicator)
         return R
@@ -273,9 +271,7 @@ class Equation(object):
         :arg fields_old: Time lagged dictionary of fields
         :arg adjoint: solution :class:`.Function` of the corresponding adjoint equation
         """
-        if norm_type not in ('L1', 'L2'):
-            raise ValueError(f'Norm type {norm_type} not supported')
-        fluxes = {}
+        r = 0
         for term in self.select_terms(label):
             r += term.fluxes(solution, solution_old, fields, fields_old, adjoint, self.indicator)
         return r
