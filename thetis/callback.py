@@ -133,6 +133,8 @@ class DiagnosticHDF5(object):
         :type variables: tuple of float
         :kwarg int index: If provided, defines the time index in the file
         """
+        if variables is None:
+            return
         if self.comm.rank == 0:
             with h5py.File(self.filename, 'a') as hdf5file:
                 if index is not None:
@@ -604,7 +606,8 @@ class TimeSeriesCallback2D(DiagnosticCallback):
                  location_name, z=None,
                  outputdir=None, export_to_hdf5=True,
                  append_to_log=True,
-                 tolerance=1e-3, eval_func=None):
+                 tolerance=1e-3, eval_func=None,
+                 start_time=None, end_time=None):
         """
         :arg solver_obj: Thetis :class:`FlowSolver` object
         :arg fieldnames: List of fields to extract
@@ -618,6 +621,8 @@ class TimeSeriesCallback2D(DiagnosticCallback):
             format
         :kwarg bool append_to_log: If True, callback output messages will be
             printed in log
+        :kwarg start_time: Optional start time for timeseries extraction
+        :kwarg end_time: Optional end time for timeseries extraction
         """
         assert export_to_hdf5 is True
         self.fieldnames = fieldnames
@@ -645,6 +650,8 @@ class TimeSeriesCallback2D(DiagnosticCallback):
         self.z = z
         self.tolerance = tolerance
         self.eval_func = eval_func
+        self.start_time = start_time or -numpy.inf
+        self.end_time = end_time or numpy.inf
         self._initialized = False
 
     @PETSc.Log.EventDecorator("thetis.TimeSeriesCallback2D._initialize")
@@ -675,6 +682,9 @@ class TimeSeriesCallback2D(DiagnosticCallback):
     def __call__(self):
         if not self._initialized:
             self._initialize()
+        t = self.solver_obj.simulation_time
+        if t < self.start_time or t > self.end_time:
+            return
         outvals = []
         for fieldname in self.fieldnames:
             try:
